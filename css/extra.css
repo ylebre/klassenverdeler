@@ -1,0 +1,18 @@
+		.results {
+			display: none;
+		}
+		table th,
+		table td {
+			padding: 5px;
+		}
+		table {
+			border: 1px solid #888;
+			border-collapse: collapse;
+			margin-bottom: 20px;
+		}
+		thead {
+			border: 1px solid #888;
+		}
+		td {
+			border-right: 1px solid #888;
+		}
