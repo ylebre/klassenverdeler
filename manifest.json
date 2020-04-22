@@ -1,0 +1,16 @@
+{
+  "name": "Klassenverdeler",
+  "short_name": "Klassenverdeler",
+  "description": "Klassenverdeler",
+  "start_url": "/",
+  "theme_color": "#000",
+  "background_color": "#FFF",
+  "icons": [
+    {
+      "src": "camil_512x512.png"
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "display": "standalone"
+}

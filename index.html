@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="nl">
+<head>
+	<title>Klassenverdeler</title>
+	<link rel="icon" type="image/png" href="favicon.png">
+	<link rel="stylesheet" href="/css/styles.css">
+	<style>
+		.results {
+			display: none;
+		}
+		table th,
+		table td {
+			padding: 5px;
+		}
+		table {
+			border: 1px solid #888;
+			border-collapse: collapse;
+			margin-bottom: 20px;
+		}
+		thead {
+			border: 1px solid #888;
+		}
+		td {
+			border-right: 1px solid #888;
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<nav class="ds-navbar ds-navbar-nav ds-button-bar ds-bg-primary">
+			<div class="ds-navbar-center">
+				<button data-simply-command="home" class="ds-button ds-button-primary">
+					Klassenverdeler volgens Corona regels
+				</button>
+			</div>
+		</nav>
+	</header>
+	<main>
+		<h1>Hoe werkt het?</h1>
+		<ul>
+			<li>Kies een XLSX bestand om te verdelen. Het bestand moet de kolommen 'Klas', 'Leerlingnummer', 'Adres' hebben. <a target="_blank" href="/example/example.xlsx">Download een voorbeeldbestand</a></li>
+			<li>Alle leerlingen worden gesorteerd op 'adres'. Alle leerlingen op hetzelfde adres komen in hetzelfde tijdslot.</li>
+			<li>Daarna worden de leerlingen verdeeld per klas, zodat welke groep zoveel mogelijk een gelijke verdeling heeft per tijdslot.</li>
+			<li>De resultaten worden op het scherm getoond, en kunnen worden opgeslagen. De hele verdeling wordt op je eigen computer gedaan, dus er worden nooit gegevens verzonden.</li>
+			<li>Algoritme in PHP door Bert Slagter, aangepast voor javascript door Yvo Brevoort.</li>
+			<li>Broncode is open source (MIT license) beschikbaar op <a href="https://github.com/ylebre/klassenverdeler/">https://github.com/ylebre/klassenverdeler/</a></li>
+
+		</ul>
+		<label>Aantal segmenten / tijdsloten
+			<input type="number" data-simply-field="segmentCount" value="2">
+		</label>
+		<label>Kies een XLSX bestand met 'Klas', 'Leerlingnummer', 'Adres' kolommen
+			<input class="ds-button" type="file" data-simply-command="uploadXLSX">
+		</label>
+		<div data-simply-field="results" data-simply-content="template">
+			<template data-simply-template="true">
+				<table class="ds-space">
+					<thead class="ds-primary">
+						<th>Klas</th>
+						<th>Leerlingnummer</th>
+						<th>Adres</th>
+						<th>Segment</th>
+					</thead>
+					<tbody data-simply-list="dataSheet">
+						<template>
+							<tr>
+								<td data-simply-field="Klas"></td>
+								<td data-simply-field="Leerlingnummer"></td>
+								<td data-simply-field="Adres"></td>
+								<td data-simply-field="Segment"></td>
+							</tr>
+						</template>
+					</tbody>
+				</table>
+				<button class="ds-button ds-button-primary" data-simply-command="downloadXLSX">Resultaat opslaan</button>
+			</template>
+		</div>
+	</main>
+	<script src="/node_modules/jszip/dist/jszip.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.14.0/jszip.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.14.0/xlsx.js"></script>
+	<script src="https://cdn.simplyedit.io/1/simply-edit.js" data-simply-storage="none"></script>
+	<script src="/js/simply.everything.js"></script>
+	<script>
+		var app = simply.app({
+			commands: {
+				/* Menu javascript helpers */
+				'ds-show': function(el, value) {
+					if (value) {
+						el = document.querySelector(value);
+					}
+					el.classList.remove('ds-hidden');
+				},
+				'ds-hide': function(el, value) {
+					if (value) {
+						el = document.querySelector(value);
+					}
+					el.classList.add('ds-hidden');
+				},
+				'ds-toggle': function(el, value) {
+					if (value) {
+						el = document.querySelector(value);
+					}
+					app.actions['ds-toggle'](el);
+				},
+				toggleMenu: function(el, value) {
+					el.classList.toggle('is-active');
+					if (el.dataset.simplyState=='open') {
+						el.dataset.simplyState='closed';
+						if (value) {
+							document.querySelector(value).classList.add('ds-hidden');
+						}
+					} else {
+						var menus = document.querySelectorAll('.app-menu');
+						menus.forEach(function(menu) {
+							menu.classList.add('ds-hidden');
+						});
+						var buttons = document.querySelectorAll('.ds-button[data-simply-state="open"]');
+						buttons.forEach(function(button) {
+							button.dataset.simplyState='closed';
+						});
+						el.dataset.simplyState='open';
+						if (value) {
+							document.querySelector(value).classList.remove('ds-hidden');
+						}
+					}
+				},
+				/* The actual commands for this app */
+				uploadXLSX : function(el, value) {
+					this.app.actions.uploadXLSX(el, value);
+				},
+				downloadXLSX : function(el, value) {
+					this.app.actions.downloadXLSX(el, value);
+				},
+				home : function() {
+					simply.route.goto("/");
+				}
+			},
+			actions: {
+				/* Menu helpers */
+				'ds-toggle': function(el) {
+					el.classList.toggle('ds-hidden');
+					return Promise.resolve();
+				},
+				'ds-hide': function(el) {
+					el.classList.add('ds-hidden');
+					return Promise.resolve();
+				},
+
+				/* Actions for this app */
+				uploadXLSX : function(el, value) {
+					var processFile = function(file) {
+						var reader = new FileReader();
+						reader.onload = function(e) {
+							var data = e.target.result;
+							var workbook = XLSX.read(data, {
+								type: 'binary'
+							});
+							var sheets = {};
+							workbook.SheetNames.forEach(function(sheetName) {
+								sheets[sheetName] = XLSX.utils.sheet_to_row_object_array(
+									workbook.Sheets[sheetName]
+								);
+							});
+							processSheets(sheets);
+						};
+						reader.onerror = function(ex) {
+							console.error(ex);
+						};
+						reader.readAsBinaryString(file);
+					};
+					var splitByAddress = function(dataSheet) {
+						var byAddress = {};
+						dataSheet.forEach(function(row) {
+							var address = row['Adres'];
+							if (typeof byAddress[address] == "undefined") {
+								byAddress[address] = [];
+							}
+							byAddress[address].push(row);
+						});
+						return byAddress;
+					};
+					var splitByGroup = function(dataSheet) {
+						var byGroup = {};
+						dataSheet.forEach(function(row) {
+							var group = row['Klas'];
+							if (typeof byGroup[group] == "undefined") {
+								byGroup[group] = [];
+							}
+							byGroup[group].push(row);
+						});
+						return byGroup;
+					};
+					var distribute = function(dataSheet) {
+						var byAddress = splitByAddress(dataSheet);
+						var byGroup = splitByGroup(dataSheet);
+						var i=0;
+						Object.values(byAddress).forEach(function(address) {
+							if (address.length < 2) {
+								return;
+							}
+
+							var segment = 1 + (i % parseInt(editor.pageData.segmentCount));
+							address.forEach(function(student) {
+								student.Segment = "" + segment;
+							});
+							i++;
+						});
+
+						Object.values(byGroup).forEach(function(group) {
+							// count segments first, fill up whichever is lacking
+							var segments = {};
+							for (var i=1; i <= editor.pageData.segmentCount; i++) {
+								segments[i] = 0;
+							}
+							group.forEach(function(student) {
+								if (student.Segment) {
+									segments[student.Segment]++
+								}
+							});
+							
+							var getLowestSegment = function(segments) {
+								var lowest = false;
+								for (key in segments) {
+									if (!lowest || (segments[key] < segments[lowest])) {
+										lowest = key;
+									}
+								}
+								return lowest;
+							};
+
+							group.forEach(function(student) {
+								if (!student.Segment) {
+									// find the segment with the least students, add the student there;
+									var segment = getLowestSegment(segments);
+									segments[segment]++;
+									student.Segment = "" + segment;
+								}
+							});
+						});
+					};
+					var processSheets = function(sheets) {
+						var firstKey = Object.keys(sheets)[0];
+						var dataSheet = sheets[firstKey];
+						editor.pageData.dataSheet = sheets[firstKey];
+						distribute(editor.pageData.dataSheet);
+						editor.pageData.results = true;
+					};
+					var files = Array.from(el.files);
+					files.forEach(function(file) {
+						processFile(file);
+					});
+				},
+				downloadXLSX : function() {
+					var name = "Klassen ingedeeld";
+					var headings = ["Klas", "Leerlingnummer", "Adres", "Segment"];
+					var worksheet = XLSX.utils.json_to_sheet(editor.pageData.dataSheet, {header: headings});
+					var workbook = XLSX.utils.book_new();
+					XLSX.utils.book_append_sheet(workbook, worksheet, name);
+					XLSX.writeFile(workbook, name+'.xlsx');
+				}
+			}
+		});
+	</script>
+</body>
+</html>
